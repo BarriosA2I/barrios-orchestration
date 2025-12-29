@@ -34,7 +34,7 @@ services:
 
     # Auto-deploy on push
     autoDeploy: true
-    branch: main
+    branch: master
 
   # Redis for Event Bus
   - type: redis
