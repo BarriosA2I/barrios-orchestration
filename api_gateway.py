@@ -165,11 +165,13 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://barrios-landing.vercel.app",
+        "https://barrios-api-gateway.onrender.com",
         "https://barriosa2i.com",
         "https://www.barriosa2i.com",
         "http://localhost:3000",
         "http://localhost:5173",
         "http://localhost:8080",
+        "http://localhost:8088",
         "*",  # Allow all for development
     ],
     allow_credentials=True,
