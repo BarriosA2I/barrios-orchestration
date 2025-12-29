@@ -1,0 +1,43 @@
+# Render Blueprint for Barrios A2I API Gateway
+# Deploy with: render blueprint apply
+
+services:
+  # API Gateway Web Service
+  - type: web
+    name: barrios-api-gateway
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+
+    # Scaling
+    plan: starter
+    numInstances: 1
+
+    # Health check
+    healthCheckPath: /api/health
+
+    # Environment
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: LOG_LEVEL
+        value: info
+      - key: REDIS_URL
+        fromService:
+          name: barrios-redis
+          type: redis
+          property: connectionString
+      - key: PORT
+        value: 8080
+      - key: ANTHROPIC_API_KEY
+        sync: false
+
+    # Auto-deploy on push
+    autoDeploy: true
+    branch: main
+
+  # Redis for Event Bus
+  - type: redis
+    name: barrios-redis
+    plan: starter
+    ipAllowList: []

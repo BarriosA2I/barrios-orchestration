@@ -1,0 +1,32 @@
+# Core
+fastapi>=0.109.0
+uvicorn>=0.27.0
+pydantic>=2.5.0
+
+# Async
+aiohttp>=3.9.0
+aioredis>=2.0.0
+
+# AI/ML
+anthropic>=0.18.0
+langchain>=0.1.0
+langchain-anthropic>=0.1.0
+
+# Data
+redis>=5.0.0
+psycopg2-binary>=2.9.0
+sqlalchemy>=2.0.0
+
+# Observability
+opentelemetry-api>=1.22.0
+opentelemetry-sdk>=1.22.0
+opentelemetry-exporter-otlp>=1.22.0
+opentelemetry-instrumentation-fastapi>=0.43b0
+prometheus-client>=0.19.0
+structlog>=24.1.0
+
+# Utils
+python-dotenv>=1.0.0
+tenacity>=8.2.0
+pyyaml>=6.0.0
+websockets>=12.0
