@@ -7,6 +7,7 @@ Author: Barrios A2I Architecture Team
 """
 
 import asyncio
+import os
 from enum import Enum
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Any, List, Callable
@@ -16,7 +17,45 @@ import structlog
 import random
 from collections import defaultdict
 
+import anthropic
+
 logger = structlog.get_logger("cognitive_orchestrator")
+
+# System prompt for Nexus Brain
+NEXUS_SYSTEM_PROMPT = """You are Nexus Brain, the intelligent AI assistant for Barrios A2I - an AI automation consultancy.
+
+ABOUT BARRIOS A2I:
+- Motto: "Alienation 2 Innovation"
+- We build world-class autonomous AI systems that run businesses with zero human intervention
+- Founded by Gary Barrios, AI automation architect
+
+SERVICES:
+1. RAG Research Agents - Scrape competitors, analyze market data, provide actionable intelligence
+2. Marketing Overlord System - Automated campaigns, content generation, social media, lead gen
+3. AI-Powered Websites - Intelligent assistants with generative UI (not basic chatbots)
+4. Custom AI Development:
+   - Option A: Free build for 30% equity
+   - Option B: Flat fee for 100% ownership
+
+KEY SYSTEMS:
+- RAGNAROK v7.0: 9-agent video generation system (243s per commercial, $2.60 cost)
+- Trinity Orchestrator: 3-agent market intelligence system
+- Thompson Router: Intelligent model selection (Haiku/Sonnet/Opus)
+
+TARGET CUSTOMERS:
+- Marketing directors at B2B SaaS
+- Agency owners
+- E-commerce managers
+- High-ticket clients ($50K-$300K for custom AI systems)
+
+RESPONSE STYLE:
+- Be helpful, professional, and concise
+- Answer questions directly about our services
+- If asked to do something (like "say BANANA"), just do it
+- Use markdown formatting for lists and emphasis
+- Don't be overly salesy - be genuinely helpful
+
+CONTACT: barriosa2i.com"""
 
 
 class ProcessingMode(Enum):
@@ -85,22 +124,22 @@ class ThompsonRouter:
     """Thompson sampling for optimal model selection"""
 
     def __init__(self):
-        # Beta distribution parameters for each model
+        # Beta distribution parameters for each model (updated Dec 2025)
         self.models = {
-            "claude-3-haiku-20240307": {"alpha": 1, "beta": 1, "cost": 0.00025},
-            "claude-3-sonnet-20240229": {"alpha": 1, "beta": 1, "cost": 0.003},
-            "claude-3-opus-20240229": {"alpha": 1, "beta": 1, "cost": 0.015},
+            "claude-3-5-haiku-20241022": {"alpha": 1, "beta": 1, "cost": 0.0008},
+            "claude-3-5-sonnet-20241022": {"alpha": 1, "beta": 1, "cost": 0.003},
+            "claude-sonnet-4-20250514": {"alpha": 1, "beta": 1, "cost": 0.003},
         }
 
     def select_model(self, complexity: float) -> str:
         """Select model using Thompson sampling based on complexity"""
-        # Simple complexity-based routing
+        # Simple complexity-based routing (updated Dec 2025)
         if complexity <= 3:
-            return "claude-3-haiku-20240307"
+            return "claude-3-5-haiku-20241022"
         elif complexity >= 7:
-            return "claude-3-opus-20240229"
+            return "claude-sonnet-4-20250514"  # Use Sonnet 4 for complex queries
         else:
-            return "claude-3-sonnet-20240229"
+            return "claude-3-5-sonnet-20241022"
 
     def update(self, model: str, success: bool):
         """Update model statistics based on outcome"""
@@ -212,17 +251,17 @@ class CognitiveOrchestrator:
             # Classify complexity
             complexity = await self._classify_complexity(request.query)
 
-            # Route to appropriate model
+            # Route to appropriate model (updated Dec 2025)
             if request.mode == ProcessingMode.AUTO:
                 if complexity <= 3:
                     mode = ProcessingMode.SYSTEM_1_FAST
-                    model = "claude-3-haiku-20240307"
+                    model = "claude-3-5-haiku-20241022"
                 elif complexity >= 7:
                     mode = ProcessingMode.SYSTEM_2_DEEP
-                    model = "claude-3-opus-20240229"
+                    model = "claude-sonnet-4-20250514"
                 else:
                     mode = ProcessingMode.HYBRID
-                    model = "claude-3-sonnet-20240229"
+                    model = "claude-3-5-sonnet-20241022"
             else:
                 mode = request.mode
                 model = self.router.select_model(complexity)
@@ -234,13 +273,13 @@ class CognitiveOrchestrator:
 
             latency = (datetime.now() - start_time).total_seconds() * 1000
 
-            # Calculate cost based on model
+            # Calculate cost based on model (updated Dec 2025)
             cost_map = {
-                "claude-3-haiku-20240307": 0.00025,
-                "claude-3-sonnet-20240229": 0.003,
-                "claude-3-opus-20240229": 0.015,
+                "claude-3-5-haiku-20241022": 0.0008,
+                "claude-3-5-sonnet-20241022": 0.003,
+                "claude-sonnet-4-20250514": 0.003,
             }
-            cost = cost_map.get(model, 0.001)
+            cost = cost_map.get(model, 0.003)
 
             # Update metrics
             self._metrics["requests_total"] += 1
@@ -301,50 +340,65 @@ class CognitiveOrchestrator:
         model: str,
         mode: ProcessingMode
     ) -> str:
-        """Generate response using the selected model"""
-        # Simulated responses for demo - production would call actual API
-        responses = {
-            ProcessingMode.SYSTEM_1_FAST: (
-                f"I can help you with that! Based on your question about "
-                f"'{query[:50]}...', here's a quick answer:\n\n"
-                f"Barrios A2I specializes in autonomous AI systems that can handle "
-                f"complex business processes with zero human intervention. "
-                f"Our solutions include RAG agents, marketing automation, "
-                f"and custom AI development.\n\n"
-                f"Would you like to know more about any specific service?"
-            ),
-            ProcessingMode.SYSTEM_2_DEEP: (
-                f"Let me provide a comprehensive analysis for your query:\n\n"
-                f"**Understanding Your Question**\n"
-                f"You asked about '{query[:100]}...'\n\n"
-                f"**Detailed Analysis**\n"
-                f"Barrios A2I offers enterprise-grade AI automation solutions:\n\n"
-                f"1. **RAG Research Agents** - Autonomous information gathering and analysis\n"
-                f"2. **Marketing Overlord** - End-to-end marketing automation\n"
-                f"3. **RAGNAROK Video System** - AI-generated video commercials\n"
-                f"4. **Custom AI Systems** - Tailored solutions for your business\n\n"
-                f"**Recommendation**\n"
-                f"Based on your inquiry, I'd suggest scheduling a consultation "
-                f"to discuss how we can automate your specific workflows."
-            ),
-            ProcessingMode.HYBRID: (
-                f"Great question! Let me break this down for you:\n\n"
-                f"Regarding '{query[:75]}...'\n\n"
-                f"Barrios A2I provides AI-powered automation solutions designed "
-                f"to transform businesses through intelligent automation.\n\n"
-                f"**Key Capabilities:**\n"
-                f"- Autonomous sales through AI chat (like this conversation!)\n"
-                f"- AI-generated video content\n"
-                f"- Competitive intelligence gathering\n"
-                f"- Custom AI agent development\n\n"
-                f"What aspect interests you most?"
-            ),
-        }
+        """Generate response using the selected Claude model"""
+        try:
+            # Get API key from environment
+            api_key = os.getenv("ANTHROPIC_API_KEY")
+            if not api_key:
+                logger.error("ANTHROPIC_API_KEY not set!")
+                return "I'm having trouble connecting right now. Please try again in a moment."
 
-        # Add small delay to simulate processing
-        await asyncio.sleep(0.1)
+            # Create Anthropic client
+            client = anthropic.Anthropic(api_key=api_key)
 
-        return responses.get(mode, responses[ProcessingMode.HYBRID])
+            # Adjust max tokens based on mode
+            max_tokens = {
+                ProcessingMode.SYSTEM_1_FAST: 500,
+                ProcessingMode.SYSTEM_2_DEEP: 2000,
+                ProcessingMode.HYBRID: 1000,
+            }.get(mode, 1000)
+
+            logger.info(
+                "Calling Claude API",
+                model=model,
+                mode=mode.value,
+                max_tokens=max_tokens,
+            )
+
+            # Call Claude API
+            message = client.messages.create(
+                model=model,
+                max_tokens=max_tokens,
+                system=NEXUS_SYSTEM_PROMPT,
+                messages=[
+                    {"role": "user", "content": query}
+                ]
+            )
+
+            # Extract response text
+            response_text = message.content[0].text
+
+            logger.info(
+                "Claude API response received",
+                model=model,
+                input_tokens=message.usage.input_tokens,
+                output_tokens=message.usage.output_tokens,
+            )
+
+            return response_text
+
+        except anthropic.APIConnectionError as e:
+            logger.error("API connection error", error=str(e))
+            return "I'm having trouble connecting to my AI backend. Please try again."
+        except anthropic.RateLimitError as e:
+            logger.error("Rate limit exceeded", error=str(e))
+            return "I'm receiving too many requests right now. Please wait a moment and try again."
+        except anthropic.APIStatusError as e:
+            logger.error("API status error", error=str(e), status_code=e.status_code)
+            return f"Something went wrong on my end. Please try again."
+        except Exception as e:
+            logger.error("Unexpected error in _generate_response", error=str(e))
+            return "I encountered an unexpected error. Please try again."
 
     async def health_check(self) -> HealthCheckResult:
         """Perform health check"""
