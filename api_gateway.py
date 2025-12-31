@@ -247,6 +247,7 @@ async def chat(request: ChatRequest):
 async def chat_stream(request: ChatRequest):
     """
     Streaming chat endpoint for real-time token delivery.
+    Uses true Anthropic streaming API for <3s first token latency.
     Returns Server-Sent Events (SSE) stream.
     """
     message_id = str(uuid.uuid4())
@@ -262,33 +263,22 @@ async def chat_stream(request: ChatRequest):
             }
             mode = mode_map.get(request.mode, ProcessingMode.AUTO)
 
-            # Execute query
-            result = await orchestrator.execute(
-                OrchestrationRequest(
-                    query=request.message,
-                    mode=mode,
-                    session_id=request.session_id,
-                )
+            # Create orchestration request
+            orch_request = OrchestrationRequest(
+                query=request.message,
+                mode=mode,
+                session_id=request.session_id,
             )
 
-            if result.success and result.answer:
-                # Simulate streaming by chunking response
-                words = result.answer.split()
-                for i, word in enumerate(words):
-                    chunk = {
-                        "type": "token",
-                        "content": word + " ",
-                        "index": i,
-                    }
-                    yield f"data: {json.dumps(chunk)}\n\n"
-                    await asyncio.sleep(0.02)  # 20ms between tokens
-
-                # Send completion
-                yield f"data: {json.dumps({'type': 'complete', 'message_id': message_id})}\n\n"
-            else:
-                yield f"data: {json.dumps({'type': 'error', 'message': result.error})}\n\n"
+            # Stream tokens from orchestrator using true streaming
+            async for chunk in orchestrator.generate_stream(orch_request):
+                # Add message_id to completion events
+                if chunk.get("type") == "complete":
+                    chunk["message_id"] = message_id
+                yield f"data: {json.dumps(chunk)}\n\n"
 
         except Exception as e:
+            logger.error("Streaming chat error", error=str(e))
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
 
     return StreamingResponse(
@@ -297,6 +287,7 @@ async def chat_stream(request: ChatRequest):
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # Disable nginx buffering for faster streaming
         },
     )
 

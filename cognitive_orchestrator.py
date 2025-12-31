@@ -10,7 +10,7 @@ import asyncio
 import os
 from enum import Enum
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any, List, Callable
+from typing import Optional, Dict, Any, List, Callable, AsyncGenerator
 from datetime import datetime
 import uuid
 import structlog
@@ -397,6 +397,79 @@ class CognitiveOrchestrator:
                 trace_id=trace_id,
             )
 
+    async def generate_stream(
+        self,
+        request: OrchestrationRequest
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """Execute a streaming request with the same routing logic as execute()"""
+        request_id = str(uuid.uuid4())
+        trace_id = str(uuid.uuid4())
+        start_time = datetime.now()
+
+        logger.info(
+            "Starting streaming request",
+            request_id=request_id,
+            query_length=len(request.query),
+            mode=request.mode.value,
+        )
+
+        try:
+            # Classify complexity
+            complexity = await self._classify_complexity(request.query)
+
+            # Route to appropriate model (same logic as execute)
+            if request.mode == ProcessingMode.AUTO:
+                if complexity <= 3:
+                    mode = ProcessingMode.SYSTEM_1_FAST
+                    model = "claude-3-5-haiku-20241022"
+                elif complexity >= 7:
+                    mode = ProcessingMode.SYSTEM_2_DEEP
+                    model = "claude-sonnet-4-20250514"
+                else:
+                    mode = ProcessingMode.HYBRID
+                    model = "claude-3-5-sonnet-20241022"
+            else:
+                mode = request.mode
+                model = self.router.select_model(complexity)
+
+            self._metrics["model_selections"][model] += 1
+
+            # Yield start event with metadata
+            yield {
+                "type": "start",
+                "request_id": request_id,
+                "trace_id": trace_id,
+                "model": model,
+                "mode": mode.value,
+            }
+
+            # Stream response tokens
+            async for chunk in self._generate_response_stream(
+                request.query, model, mode, request.session_id
+            ):
+                yield chunk
+
+            # Update metrics on completion
+            latency = (datetime.now() - start_time).total_seconds() * 1000
+            self._metrics["requests_total"] += 1
+            self._metrics["requests_success"] += 1
+            self._metrics["latency_sum_ms"] += latency
+
+            cost_map = {
+                "claude-3-5-haiku-20241022": 0.0008,
+                "claude-3-5-sonnet-20241022": 0.003,
+                "claude-sonnet-4-20250514": 0.003,
+            }
+            self._metrics["cost_sum_usd"] += cost_map.get(model, 0.003)
+
+            self.router.update(model, True)
+
+        except Exception as e:
+            logger.error("Streaming error", error=str(e), request_id=request_id)
+            self._metrics["requests_total"] += 1
+            self._metrics["requests_failed"] += 1
+            yield {"type": "error", "message": str(e), "request_id": request_id}
+
     async def _classify_complexity(self, query: str) -> int:
         """Classify query complexity (1-10)"""
         score = min(len(query) // 50, 5)
@@ -501,6 +574,105 @@ class CognitiveOrchestrator:
         except Exception as e:
             logger.error("Unexpected error in _generate_response", error=str(e))
             return "I encountered an unexpected error. Please try again."
+
+    async def _generate_response_stream(
+        self,
+        query: str,
+        model: str,
+        mode: ProcessingMode,
+        session_id: Optional[str] = None
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """Stream response tokens using Anthropic streaming API"""
+        try:
+            # Get API key from environment
+            api_key = os.getenv("ANTHROPIC_API_KEY")
+            if not api_key:
+                logger.error("ANTHROPIC_API_KEY not set!")
+                yield {"type": "error", "message": "Connection error. Please try again."}
+                return
+
+            # Create Anthropic client
+            client = anthropic.Anthropic(api_key=api_key)
+
+            # Adjust max tokens based on mode
+            max_tokens = {
+                ProcessingMode.SYSTEM_1_FAST: 500,
+                ProcessingMode.SYSTEM_2_DEEP: 2000,
+                ProcessingMode.HYBRID: 1000,
+            }.get(mode, 1000)
+
+            # Build messages with session history for context
+            messages = []
+            if session_id and session_id in self._session_history:
+                messages = list(self._session_history[session_id][-10:])
+            messages.append({"role": "user", "content": query})
+
+            logger.info(
+                "Starting streaming Claude API call",
+                model=model,
+                mode=mode.value,
+                max_tokens=max_tokens,
+                session_id=session_id,
+                history_length=len(messages) - 1,
+            )
+
+            # Use streaming API
+            accumulated_content = ""
+            input_tokens = 0
+            output_tokens = 0
+
+            with client.messages.stream(
+                model=model,
+                max_tokens=max_tokens,
+                system=NEXUS_SYSTEM_PROMPT,
+                messages=messages
+            ) as stream:
+                for text in stream.text_stream:
+                    accumulated_content += text
+                    yield {"type": "token", "content": text}
+
+                # Get final message for token counts
+                final_message = stream.get_final_message()
+                input_tokens = final_message.usage.input_tokens
+                output_tokens = final_message.usage.output_tokens
+
+            # Store in session history after completion
+            if session_id:
+                if session_id not in self._session_history:
+                    self._session_history[session_id] = []
+                self._session_history[session_id].append({"role": "user", "content": query})
+                self._session_history[session_id].append({"role": "assistant", "content": accumulated_content})
+                if len(self._session_history[session_id]) > self._max_history_per_session:
+                    self._session_history[session_id] = self._session_history[session_id][-self._max_history_per_session:]
+
+            logger.info(
+                "Streaming Claude API complete",
+                model=model,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                session_id=session_id,
+            )
+
+            # Yield completion event
+            yield {
+                "type": "complete",
+                "content": accumulated_content,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+            }
+
+        except anthropic.APIConnectionError as e:
+            logger.error("API connection error", error=str(e))
+            yield {"type": "error", "message": "Connection error. Please try again."}
+        except anthropic.RateLimitError as e:
+            logger.error("Rate limit exceeded", error=str(e))
+            yield {"type": "error", "message": "Too many requests. Please wait a moment."}
+        except anthropic.APIStatusError as e:
+            logger.error("API status error", error=str(e), status_code=e.status_code)
+            yield {"type": "error", "message": "Backend error. Please try again."}
+        except Exception as e:
+            logger.error("Unexpected error in streaming", error=str(e))
+            yield {"type": "error", "message": "Unexpected error. Please try again."}
 
     async def health_check(self) -> HealthCheckResult:
         """Perform health check"""
