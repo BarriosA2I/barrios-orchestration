@@ -25,7 +25,7 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "info")
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
 from pydantic import BaseModel, Field
 import structlog
 from opentelemetry import trace
@@ -35,7 +35,9 @@ from cognitive_orchestrator import (
     CognitiveOrchestrator,
     OrchestrationRequest,
     ProcessingMode,
+    METRICS_REGISTRY,
 )
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from event_bus import TypedEventBus, EventType, StreamChunkEvent
 from websocket_bridge import WebSocketBridge
 
@@ -387,8 +389,27 @@ async def health_check():
 
 @app.get("/api/metrics")
 async def get_metrics():
-    """Get system metrics"""
+    """Get system metrics (JSON format)"""
     return orchestrator.get_metrics()
+
+
+@app.get("/metrics")
+async def prometheus_metrics():
+    """
+    Prometheus metrics endpoint.
+    Returns metrics in Prometheus text format for scraping.
+
+    Metrics exposed:
+    - nexus_routing_tier_total: Request count by complexity tier
+    - nexus_routing_latency_seconds: Latency histogram by tier/model
+    - nexus_routing_cost_usd: Cumulative cost by tier/model
+    - nexus_complexity_score: Distribution of complexity scores
+    - nexus_session_messages_total: Total messages across sessions
+    """
+    return Response(
+        content=generate_latest(METRICS_REGISTRY),
+        media_type=CONTENT_TYPE_LATEST,
+    )
 
 
 # ============================================================

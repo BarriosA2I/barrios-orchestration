@@ -19,8 +19,56 @@ import random
 from collections import defaultdict
 
 import anthropic
+from prometheus_client import Counter, Histogram, CollectorRegistry, generate_latest, CONTENT_TYPE_LATEST
 
 logger = structlog.get_logger("cognitive_orchestrator")
+
+# ============================================================
+# PROMETHEUS METRICS
+# ============================================================
+
+# Create a custom registry (allows multiple instances without conflicts)
+METRICS_REGISTRY = CollectorRegistry()
+
+# Counter: Total requests by routing tier
+ROUTING_TIER_TOTAL = Counter(
+    'nexus_routing_tier_total',
+    'Total requests by complexity tier',
+    ['tier'],
+    registry=METRICS_REGISTRY
+)
+
+# Histogram: Latency by tier and model
+ROUTING_LATENCY = Histogram(
+    'nexus_routing_latency_seconds',
+    'Request latency by tier and model',
+    ['tier', 'model'],
+    buckets=[0.1, 0.25, 0.5, 1.0, 2.0, 3.0, 5.0, 10.0],
+    registry=METRICS_REGISTRY
+)
+
+# Counter: Cost by tier and model
+ROUTING_COST = Counter(
+    'nexus_routing_cost_usd',
+    'Total cost in USD by tier and model',
+    ['tier', 'model'],
+    registry=METRICS_REGISTRY
+)
+
+# Histogram: Complexity score distribution
+COMPLEXITY_SCORE = Histogram(
+    'nexus_complexity_score',
+    'Distribution of complexity scores (0-1)',
+    buckets=[0.1, 0.2, 0.33, 0.5, 0.66, 0.8, 0.9, 1.0],
+    registry=METRICS_REGISTRY
+)
+
+# Counter: Total session messages
+SESSION_MESSAGES = Counter(
+    'nexus_session_messages_total',
+    'Total messages across all sessions',
+    registry=METRICS_REGISTRY
+)
 
 # System prompt for Nexus Brain - Sales Consultant v2.0
 NEXUS_SYSTEM_PROMPT = """You are NEXUS, a senior AI automation consultant at Barrios A2I. You're brilliant, confident, and genuinely helpful - like having a $500/hour consultant as a smart friend.
@@ -427,11 +475,20 @@ class CognitiveOrchestrator:
             }
             cost = cost_map.get(model, 0.003)
 
-            # Update metrics
+            # Update internal metrics
             self._metrics["requests_total"] += 1
             self._metrics["requests_success"] += 1
             self._metrics["latency_sum_ms"] += latency
             self._metrics["cost_sum_usd"] += cost
+
+            # Update Prometheus metrics
+            tier = signals.tier
+            model_short = model.split("-")[2] if "-" in model else model  # haiku, sonnet, etc.
+            ROUTING_TIER_TOTAL.labels(tier=tier).inc()
+            ROUTING_LATENCY.labels(tier=tier, model=model_short).observe(latency / 1000)  # Convert to seconds
+            ROUTING_COST.labels(tier=tier, model=model_short).inc(cost)
+            COMPLEXITY_SCORE.observe(signals.total)
+            SESSION_MESSAGES.inc()
 
             # Update router with success
             self.router.update(model, True)
@@ -537,7 +594,17 @@ class CognitiveOrchestrator:
                 "claude-3-5-sonnet-20241022": 0.003,
                 "claude-sonnet-4-20250514": 0.003,
             }
-            self._metrics["cost_sum_usd"] += cost_map.get(model, 0.003)
+            cost = cost_map.get(model, 0.003)
+            self._metrics["cost_sum_usd"] += cost
+
+            # Update Prometheus metrics
+            tier = signals.tier
+            model_short = model.split("-")[2] if "-" in model else model
+            ROUTING_TIER_TOTAL.labels(tier=tier).inc()
+            ROUTING_LATENCY.labels(tier=tier, model=model_short).observe(latency / 1000)
+            ROUTING_COST.labels(tier=tier, model=model_short).inc(cost)
+            COMPLEXITY_SCORE.observe(signals.total)
+            SESSION_MESSAGES.inc()
 
             self.router.update(model, True)
 
