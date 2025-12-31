@@ -8,6 +8,7 @@ Author: Barrios A2I Architecture Team
 
 import asyncio
 import os
+import re
 from enum import Enum
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Any, List, Callable, AsyncGenerator
@@ -157,6 +158,60 @@ class CircuitState(Enum):
     CLOSED = "closed"
     OPEN = "open"
     HALF_OPEN = "half_open"
+
+
+@dataclass
+class ComplexitySignals:
+    """Neural RAG Brain complexity signals for routing decisions"""
+    base_score: float = 0.0
+    multiple_entities: float = 0.0      # +0.2 for multiple entities
+    temporal_reasoning: float = 0.0     # +0.15 for time-based logic
+    comparison_contrast: float = 0.0    # +0.15 for compare/contrast
+    calculations_needed: float = 0.0    # +0.2 for arithmetic
+    multi_step_reasoning: float = 0.0   # +0.3 for multi-hop
+    ambiguous_open_ended: float = 0.0   # +0.1 for open questions
+    simple_lookup: float = 0.0          # -0.2 for simple lookups
+
+    @property
+    def total(self) -> float:
+        """Calculate total complexity score (0-1 scale)"""
+        raw = (
+            self.base_score +
+            self.multiple_entities +
+            self.temporal_reasoning +
+            self.comparison_contrast +
+            self.calculations_needed +
+            self.multi_step_reasoning +
+            self.ambiguous_open_ended +
+            self.simple_lookup
+        )
+        return min(max(raw, 0.0), 1.0)
+
+    @property
+    def tier(self) -> str:
+        """Get complexity tier: SIMPLE, MODERATE, or COMPLEX"""
+        score = self.total
+        if score < 0.33:
+            return "SIMPLE"
+        elif score < 0.66:
+            return "MODERATE"
+        else:
+            return "COMPLEX"
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for logging"""
+        return {
+            "base_score": self.base_score,
+            "multiple_entities": self.multiple_entities,
+            "temporal_reasoning": self.temporal_reasoning,
+            "comparison_contrast": self.comparison_contrast,
+            "calculations_needed": self.calculations_needed,
+            "multi_step_reasoning": self.multi_step_reasoning,
+            "ambiguous_open_ended": self.ambiguous_open_ended,
+            "simple_lookup": self.simple_lookup,
+            "total": self.total,
+            "tier": self.tier,
+        }
 
 
 @dataclass
@@ -329,23 +384,33 @@ class CognitiveOrchestrator:
         )
 
         try:
-            # Classify complexity
-            complexity = await self._classify_complexity(request.query)
+            # Analyze complexity with Neural RAG Brain signals
+            signals = self._analyze_complexity_signals(request.query)
 
-            # Route to appropriate model (updated Dec 2025)
+            # Route to appropriate model using Neural RAG Brain tiers
             if request.mode == ProcessingMode.AUTO:
-                if complexity <= 3:
-                    mode = ProcessingMode.SYSTEM_1_FAST
-                    model = "claude-3-5-haiku-20241022"
-                elif complexity >= 7:
-                    mode = ProcessingMode.SYSTEM_2_DEEP
-                    model = "claude-sonnet-4-20250514"
-                else:
-                    mode = ProcessingMode.HYBRID
-                    model = "claude-3-5-sonnet-20241022"
+                model, mode = self._route_by_complexity(signals)
             else:
                 mode = request.mode
-                model = self.router.select_model(complexity)
+                # Manual mode override - still use appropriate model for the mode
+                if mode == ProcessingMode.SYSTEM_1_FAST:
+                    model = "claude-3-5-haiku-20241022"
+                elif mode == ProcessingMode.SYSTEM_2_DEEP:
+                    model = "claude-sonnet-4-20250514"
+                else:
+                    model = "claude-3-5-sonnet-20241022"
+
+            # Log routing decision with full telemetry
+            logger.info(
+                "Neural RAG routing decision",
+                request_id=request_id,
+                complexity_tier=signals.tier,
+                complexity_score=round(signals.total, 3),
+                model_selected=model,
+                mode_selected=mode.value,
+                signals=signals.to_dict(),
+                query_preview=request.query[:50] + "..." if len(request.query) > 50 else request.query,
+            )
 
             self._metrics["model_selections"][model] += 1
 
@@ -378,7 +443,7 @@ class CognitiveOrchestrator:
                 confidence=0.85 + (random.random() * 0.1),  # 0.85-0.95
                 model_used=model,
                 mode_used=mode,
-                complexity_score=complexity / 10,
+                complexity_score=signals.total,
                 latency_ms=latency,
                 cost_usd=cost,
                 citations=[],
@@ -401,7 +466,7 @@ class CognitiveOrchestrator:
         self,
         request: OrchestrationRequest
     ) -> AsyncGenerator[Dict[str, Any], None]:
-        """Execute a streaming request with the same routing logic as execute()"""
+        """Execute a streaming request with Neural RAG Brain routing"""
         request_id = str(uuid.uuid4())
         trace_id = str(uuid.uuid4())
         start_time = datetime.now()
@@ -414,33 +479,45 @@ class CognitiveOrchestrator:
         )
 
         try:
-            # Classify complexity
-            complexity = await self._classify_complexity(request.query)
+            # Analyze complexity with Neural RAG Brain signals
+            signals = self._analyze_complexity_signals(request.query)
 
-            # Route to appropriate model (same logic as execute)
+            # Route to appropriate model using Neural RAG Brain tiers
             if request.mode == ProcessingMode.AUTO:
-                if complexity <= 3:
-                    mode = ProcessingMode.SYSTEM_1_FAST
-                    model = "claude-3-5-haiku-20241022"
-                elif complexity >= 7:
-                    mode = ProcessingMode.SYSTEM_2_DEEP
-                    model = "claude-sonnet-4-20250514"
-                else:
-                    mode = ProcessingMode.HYBRID
-                    model = "claude-3-5-sonnet-20241022"
+                model, mode = self._route_by_complexity(signals)
             else:
                 mode = request.mode
-                model = self.router.select_model(complexity)
+                # Manual mode override - still use appropriate model for the mode
+                if mode == ProcessingMode.SYSTEM_1_FAST:
+                    model = "claude-3-5-haiku-20241022"
+                elif mode == ProcessingMode.SYSTEM_2_DEEP:
+                    model = "claude-sonnet-4-20250514"
+                else:
+                    model = "claude-3-5-sonnet-20241022"
+
+            # Log routing decision with full telemetry
+            logger.info(
+                "Neural RAG streaming routing decision",
+                request_id=request_id,
+                complexity_tier=signals.tier,
+                complexity_score=round(signals.total, 3),
+                model_selected=model,
+                mode_selected=mode.value,
+                signals=signals.to_dict(),
+                query_preview=request.query[:50] + "..." if len(request.query) > 50 else request.query,
+            )
 
             self._metrics["model_selections"][model] += 1
 
-            # Yield start event with metadata
+            # Yield start event with metadata including complexity info
             yield {
                 "type": "start",
                 "request_id": request_id,
                 "trace_id": trace_id,
                 "model": model,
                 "mode": mode.value,
+                "complexity_tier": signals.tier,
+                "complexity_score": round(signals.total, 3),
             }
 
             # Stream response tokens
@@ -471,22 +548,151 @@ class CognitiveOrchestrator:
             yield {"type": "error", "message": str(e), "request_id": request_id}
 
     async def _classify_complexity(self, query: str) -> int:
-        """Classify query complexity (1-10)"""
-        score = min(len(query) // 50, 5)
+        """Classify query complexity (1-10) - Legacy interface"""
+        signals = self._analyze_complexity_signals(query)
+        # Convert 0-1 scale to 1-10 scale
+        return max(1, min(10, int(signals.total * 10) + 1))
 
-        # High complexity indicators
-        if any(w in query.lower() for w in ['analyze', 'compare', 'explain why', 'evaluate']):
-            score += 3
-        if any(w in query.lower() for w in ['step by step', 'detailed', 'comprehensive']):
-            score += 2
-        if '?' in query and query.count('?') > 1:
-            score += 1
+    def _analyze_complexity_signals(self, query: str) -> ComplexitySignals:
+        """
+        Neural RAG Brain complexity analysis with detailed signal scoring.
 
-        # Medium complexity indicators
-        if any(w in query.lower() for w in ['how', 'why', 'what if']):
-            score += 1
+        Returns ComplexitySignals with breakdown of complexity factors.
+        Total score is 0-1 scale mapping to:
+          - SIMPLE (0-0.33): Haiku, <500ms target
+          - MODERATE (0.33-0.66): Sonnet, <1500ms target
+          - COMPLEX (0.66-1.0): Opus/Sonnet4, <3000ms target
+        """
+        query_lower = query.lower()
+        signals = ComplexitySignals()
 
-        return min(max(score, 1), 10)
+        # ===== BASE SCORE (query length and structure) =====
+        # Short queries start lower, long queries start higher
+        word_count = len(query.split())
+        if word_count <= 5:
+            signals.base_score = 0.1
+        elif word_count <= 15:
+            signals.base_score = 0.2
+        elif word_count <= 30:
+            signals.base_score = 0.3
+        else:
+            signals.base_score = 0.4
+
+        # ===== SIMPLE LOOKUP REDUCTION (-0.2) =====
+        simple_patterns = [
+            'what is', 'what are', 'define', 'list', 'tell me about',
+            'who is', 'where is', 'when did', 'how much does', 'how much is',
+            'what does', 'what do you', 'do you offer', 'do you have',
+        ]
+        if any(pattern in query_lower for pattern in simple_patterns):
+            # Check it's not followed by complexity indicators
+            if not any(w in query_lower for w in ['and', 'compare', 'analyze', 'vs', 'versus']):
+                signals.simple_lookup = -0.2
+
+        # ===== MULTIPLE ENTITIES (+0.2) =====
+        # Count proper nouns / named entities (capitalized words not at sentence start)
+        words = query.split()
+        entity_indicators = 0
+        for i, word in enumerate(words):
+            if i > 0 and word[0].isupper() and word.lower() not in ['i', 'a', 'the']:
+                entity_indicators += 1
+        # Also check for "and" connecting nouns
+        if ' and ' in query_lower and any(w in query_lower for w in ['service', 'feature', 'product', 'option', 'pricing']):
+            entity_indicators += 1
+        if entity_indicators >= 2:
+            signals.multiple_entities = 0.2
+
+        # ===== TEMPORAL REASONING (+0.15) =====
+        temporal_patterns = [
+            'after', 'before', 'then', 'next', 'first', 'finally',
+            'over time', 'history', 'timeline', 'when', 'schedule',
+            'annually', 'monthly', 'weekly', 'per month', 'per year',
+        ]
+        if any(pattern in query_lower for pattern in temporal_patterns):
+            signals.temporal_reasoning = 0.15
+
+        # ===== COMPARISON/CONTRAST (+0.15) =====
+        comparison_patterns = [
+            'compare', 'vs', 'versus', 'difference between', 'better than',
+            'or', 'which is', 'pros and cons', 'advantages', 'disadvantages',
+            'how does .* compare', 'competitor', 'against',
+        ]
+        if any(pattern in query_lower for pattern in comparison_patterns):
+            signals.comparison_contrast = 0.15
+
+        # ===== CALCULATIONS NEEDED (+0.2) =====
+        # Numbers, math words, financial calculations
+        has_numbers = bool(re.search(r'\d+', query))
+        calc_patterns = [
+            'calculate', 'compute', 'total', 'sum', 'average', 'percentage',
+            'roi', 'savings', 'cost', 'price', 'budget', 'estimate',
+            'how many', 'how much would', 'if i have', 'per', 'multiply',
+        ]
+        if has_numbers and any(pattern in query_lower for pattern in calc_patterns):
+            signals.calculations_needed = 0.2
+        elif any(pattern in query_lower for pattern in ['calculate', 'compute', 'roi', 'savings']):
+            signals.calculations_needed = 0.15
+
+        # ===== MULTI-STEP REASONING (+0.3) =====
+        multi_step_patterns = [
+            'and then', 'after that', 'step by step', 'walk me through',
+            'explain how', 'process for', 'workflow', 'pipeline',
+            'first .* then', 'start .* finish', 'end to end',
+            'comprehensive', 'detailed analysis', 'in-depth',
+        ]
+        if any(pattern in query_lower for pattern in multi_step_patterns):
+            signals.multi_step_reasoning = 0.3
+        # Multiple questions = multi-step
+        elif query.count('?') > 1:
+            signals.multi_step_reasoning = 0.2
+        # "and" with action verbs
+        elif ' and ' in query_lower and any(w in query_lower for w in ['analyze', 'explain', 'evaluate', 'create']):
+            signals.multi_step_reasoning = 0.2
+
+        # ===== AMBIGUOUS/OPEN-ENDED (+0.1) =====
+        open_patterns = [
+            'what do you think', 'your opinion', 'best approach',
+            'should i', 'would you recommend', 'advice', 'suggest',
+            'help me decide', 'what would', 'how would', 'recommend',
+        ]
+        if any(pattern in query_lower for pattern in open_patterns):
+            signals.ambiguous_open_ended = 0.1
+
+        # ===== STRATEGIC ANALYSIS BOOST =====
+        # "Analyze + recommend" is a clear complex task pattern
+        if 'analyze' in query_lower and 'recommend' in query_lower:
+            signals.multi_step_reasoning = max(signals.multi_step_reasoning, 0.3)
+
+        # ===== COMPLEXITY AMPLIFIERS =====
+        # Certain words amplify existing complexity
+        amplifiers = ['analyze', 'evaluate', 'comprehensive', 'detailed', 'explain why']
+        if any(amp in query_lower for amp in amplifiers):
+            # Boost non-simple signals by 10%
+            if signals.total > 0.33:
+                current = signals.total
+                boost = current * 0.1
+                signals.base_score += boost
+
+        return signals
+
+    def _route_by_complexity(self, signals: ComplexitySignals) -> tuple[str, ProcessingMode]:
+        """
+        Route to appropriate model based on complexity signals.
+
+        Neural RAG Brain routing:
+          - SIMPLE (0-0.33): Haiku → System 1 (<500ms)
+          - MODERATE (0.33-0.66): Sonnet → Hybrid (<1500ms)
+          - COMPLEX (0.66-1.0): Sonnet4/Opus → System 2 (<3000ms)
+        """
+        tier = signals.tier
+        score = signals.total
+
+        if tier == "SIMPLE":
+            return ("claude-3-5-haiku-20241022", ProcessingMode.SYSTEM_1_FAST)
+        elif tier == "MODERATE":
+            return ("claude-3-5-sonnet-20241022", ProcessingMode.HYBRID)
+        else:  # COMPLEX
+            return ("claude-sonnet-4-20250514", ProcessingMode.SYSTEM_2_DEEP)
 
     async def _generate_response(
         self,
