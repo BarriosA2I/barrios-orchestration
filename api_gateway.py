@@ -23,9 +23,10 @@ PORT = int(os.getenv("PORT", 8080))
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "info")
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, Response
+from fastapi.responses import StreamingResponse, Response, JSONResponse
+import asyncpg
 from pydantic import BaseModel, Field
 import structlog
 from opentelemetry import trace
@@ -410,6 +411,75 @@ async def prometheus_metrics():
         content=generate_latest(METRICS_REGISTRY),
         media_type=CONTENT_TYPE_LATEST,
     )
+
+
+# ============================================================
+# LEAD CAPTURE ENDPOINTS
+# ============================================================
+
+@app.post("/api/leads")
+async def capture_lead(request: Request):
+    """Capture lead from contact form or chat widget"""
+    try:
+        data = await request.json()
+
+        if not data.get('email'):
+            return JSONResponse(
+                status_code=400,
+                content={"status": "error", "message": "Email is required"}
+            )
+
+        database_url = os.environ.get('DATABASE_URL')
+        if not database_url:
+            logger.error("DATABASE_URL not configured")
+            return JSONResponse(
+                status_code=500,
+                content={"status": "error", "message": "Database not configured"}
+            )
+
+        conn = await asyncpg.connect(database_url)
+        try:
+            await conn.execute('''
+                INSERT INTO leads (name, email, company, phone, message, source, session_id)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+            ''',
+                data.get('name'),
+                data.get('email'),
+                data.get('company'),
+                data.get('phone'),
+                data.get('message'),
+                data.get('source', 'website'),
+                data.get('session_id')
+            )
+        finally:
+            await conn.close()
+
+        logger.info(f"Lead captured: {data.get('email')} from {data.get('source', 'website')}")
+        return {"status": "success", "message": "Thank you! We'll be in touch soon."}
+
+    except Exception as e:
+        logger.error(f"Lead capture error: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": "Failed to save lead"}
+        )
+
+
+@app.get("/api/leads/count")
+async def get_leads_count():
+    """Get count of leads for admin"""
+    database_url = os.environ.get('DATABASE_URL')
+    if not database_url:
+        return {"count": 0, "error": "Database not configured"}
+
+    try:
+        conn = await asyncpg.connect(database_url)
+        row = await conn.fetchrow('SELECT COUNT(*) as count FROM leads')
+        await conn.close()
+        return {"count": row['count']}
+    except Exception as e:
+        logger.error(f"Lead count error: {e}")
+        return {"count": 0, "error": str(e)}
 
 
 # ============================================================
