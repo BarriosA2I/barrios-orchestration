@@ -7,8 +7,9 @@ Sends new leads to alienation2innovation@gmail.com
 import os
 import asyncio
 import asyncpg
-from sendgrid import SendGridAPIClient
-from sendgrid.helpers.mail import Mail, Email, To, Content
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timezone
 import logging
 
@@ -180,26 +181,29 @@ def build_no_leads_html():
 
 
 async def send_email(subject: str, html_content: str):
-    """Send email via SendGrid"""
-    api_key = os.environ.get('SENDGRID_API_KEY')
-    if not api_key:
-        logger.error("SENDGRID_API_KEY not set")
+    """Send email via Gmail SMTP"""
+    gmail_user = os.environ.get('GMAIL_USER', SENDER_EMAIL)
+    gmail_app_password = os.environ.get('GMAIL_APP_PASSWORD')
+
+    if not gmail_app_password:
+        logger.error("GMAIL_APP_PASSWORD not set")
         return False
 
-    sg = SendGridAPIClient(api_key)
-    message = Mail(
-        from_email=Email(SENDER_EMAIL, SENDER_NAME),
-        to_emails=To(RECIPIENT),
-        subject=subject,
-        html_content=Content("text/html", html_content)
-    )
+    msg = MIMEMultipart('alternative')
+    msg['Subject'] = subject
+    msg['From'] = f"{SENDER_NAME} <{gmail_user}>"
+    msg['To'] = RECIPIENT
+
+    msg.attach(MIMEText(html_content, 'html'))
 
     try:
-        response = sg.send(message)
-        logger.info(f"Email sent! Status: {response.status_code}")
-        return response.status_code in [200, 201, 202]
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+            server.login(gmail_user, gmail_app_password)
+            server.sendmail(gmail_user, RECIPIENT, msg.as_string())
+        logger.info("Email sent via Gmail SMTP!")
+        return True
     except Exception as e:
-        logger.error(f"SendGrid error: {e}")
+        logger.error(f"Gmail SMTP error: {e}")
         return False
 
 
