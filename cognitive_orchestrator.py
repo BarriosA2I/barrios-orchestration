@@ -584,10 +584,17 @@ class CognitiveOrchestrator:
             'who is', 'where is', 'when did', 'how much does', 'how much is',
             'what does', 'what do you', 'do you offer', 'do you have',
         ]
+        # Comparison indicators that override simple lookup
+        comparison_override = [
+            'compare', 'vs', 'versus', 'difference', 'differences',
+            'better', 'alternative', 'alternatives', 'competitor',
+            'pros and cons', 'advantages', 'disadvantages',
+        ]
         if any(pattern in query_lower for pattern in simple_patterns):
-            # Check it's not followed by complexity indicators
-            if not any(w in query_lower for w in ['and', 'compare', 'analyze', 'vs', 'versus']):
-                signals.simple_lookup = -0.2
+            # Don't apply simple reduction if query contains comparison indicators
+            if not any(w in query_lower for w in comparison_override):
+                if not any(w in query_lower for w in ['and', 'analyze']):
+                    signals.simple_lookup = -0.2
 
         # ===== MULTIPLE ENTITIES (+0.2) =====
         # Count proper nouns / named entities (capitalized words not at sentence start)
@@ -613,9 +620,13 @@ class CognitiveOrchestrator:
 
         # ===== COMPARISON/CONTRAST (+0.15) =====
         comparison_patterns = [
-            'compare', 'vs', 'versus', 'difference between', 'better than',
-            'or', 'which is', 'pros and cons', 'advantages', 'disadvantages',
-            'how does .* compare', 'competitor', 'against',
+            'compare', 'vs', 'versus', 'better than', 'against',
+            'difference between', 'differences between',  # singular + plural
+            'or', 'which is', 'which are',  # singular + plural
+            'pros and cons', 'advantages', 'disadvantages',
+            'how does', 'how do',  # removed regex, use simple prefix
+            'competitor', 'competitors',  # singular + plural
+            'alternative', 'alternatives',  # common comparison term
         ]
         if any(pattern in query_lower for pattern in comparison_patterns):
             signals.comparison_contrast = 0.15
