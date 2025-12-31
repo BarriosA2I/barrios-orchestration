@@ -483,7 +483,8 @@ class CognitiveOrchestrator:
 
             # Update Prometheus metrics
             tier = signals.tier
-            model_short = model.split("-")[2] if "-" in model else model  # haiku, sonnet, etc.
+            # Extract model family: haiku, sonnet, or opus
+            model_short = "haiku" if "haiku" in model else "sonnet" if "sonnet" in model else "opus" if "opus" in model else model
             ROUTING_TIER_TOTAL.labels(tier=tier).inc()
             ROUTING_LATENCY.labels(tier=tier, model=model_short).observe(latency / 1000)  # Convert to seconds
             ROUTING_COST.labels(tier=tier, model=model_short).inc(cost)
@@ -599,7 +600,8 @@ class CognitiveOrchestrator:
 
             # Update Prometheus metrics
             tier = signals.tier
-            model_short = model.split("-")[2] if "-" in model else model
+            # Extract model family: haiku, sonnet, or opus
+            model_short = "haiku" if "haiku" in model else "sonnet" if "sonnet" in model else "opus" if "opus" in model else model
             ROUTING_TIER_TOTAL.labels(tier=tier).inc()
             ROUTING_LATENCY.labels(tier=tier, model=model_short).observe(latency / 1000)
             ROUTING_COST.labels(tier=tier, model=model_short).inc(cost)
