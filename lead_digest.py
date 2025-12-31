@@ -16,8 +16,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 RECIPIENT = "alienation2innovation@gmail.com"
-SENDER_EMAIL = "noreply@barriosa2i.com"  # Or your verified sender
-SENDER_NAME = "Barrios A2I"
+SENDER_EMAIL = "alienation2innovation@gmail.com"  # Single Sender Verified in SendGrid
+SENDER_NAME = "Barrios A2I Leads"
 
 
 async def get_new_leads():
