@@ -307,8 +307,8 @@ class ThompsonRouter:
         # Beta distribution parameters for each model (updated Dec 2025)
         self.models = {
             "claude-3-5-haiku-20241022": {"alpha": 1, "beta": 1, "cost": 0.0008},
-            "claude-3-5-sonnet-latest": {"alpha": 1, "beta": 1, "cost": 0.003},
-            "claude-3-5-sonnet-latest": {"alpha": 1, "beta": 1, "cost": 0.003},
+            "claude-3-5-haiku-20241022": {"alpha": 1, "beta": 1, "cost": 0.003},
+            "claude-3-5-haiku-20241022": {"alpha": 1, "beta": 1, "cost": 0.003},
         }
 
     def select_model(self, complexity: float) -> str:
@@ -317,9 +317,9 @@ class ThompsonRouter:
         if complexity <= 3:
             return "claude-3-5-haiku-20241022"
         elif complexity >= 7:
-            return "claude-3-5-sonnet-latest"  # Use Sonnet 4 for complex queries
+            return "claude-3-5-haiku-20241022"  # Use Sonnet 4 for complex queries
         else:
-            return "claude-3-5-sonnet-latest"
+            return "claude-3-5-haiku-20241022"
 
     def update(self, model: str, success: bool):
         """Update model statistics based on outcome"""
@@ -444,9 +444,9 @@ class CognitiveOrchestrator:
                 if mode == ProcessingMode.SYSTEM_1_FAST:
                     model = "claude-3-5-haiku-20241022"
                 elif mode == ProcessingMode.SYSTEM_2_DEEP:
-                    model = "claude-3-5-sonnet-latest"
+                    model = "claude-3-5-haiku-20241022"
                 else:
-                    model = "claude-3-5-sonnet-latest"
+                    model = "claude-3-5-haiku-20241022"
 
             # Log routing decision with full telemetry
             logger.info(
@@ -470,8 +470,8 @@ class CognitiveOrchestrator:
             # Calculate cost based on model (updated Dec 2025)
             cost_map = {
                 "claude-3-5-haiku-20241022": 0.0008,
-                "claude-3-5-sonnet-latest": 0.003,
-                "claude-3-5-sonnet-latest": 0.003,
+                "claude-3-5-haiku-20241022": 0.003,
+                "claude-3-5-haiku-20241022": 0.003,
             }
             cost = cost_map.get(model, 0.003)
 
@@ -549,9 +549,9 @@ class CognitiveOrchestrator:
                 if mode == ProcessingMode.SYSTEM_1_FAST:
                     model = "claude-3-5-haiku-20241022"
                 elif mode == ProcessingMode.SYSTEM_2_DEEP:
-                    model = "claude-3-5-sonnet-latest"
+                    model = "claude-3-5-haiku-20241022"
                 else:
-                    model = "claude-3-5-sonnet-latest"
+                    model = "claude-3-5-haiku-20241022"
 
             # Log routing decision with full telemetry
             logger.info(
@@ -592,8 +592,8 @@ class CognitiveOrchestrator:
 
             cost_map = {
                 "claude-3-5-haiku-20241022": 0.0008,
-                "claude-3-5-sonnet-latest": 0.003,
-                "claude-3-5-sonnet-latest": 0.003,
+                "claude-3-5-haiku-20241022": 0.003,
+                "claude-3-5-haiku-20241022": 0.003,
             }
             cost = cost_map.get(model, 0.003)
             self._metrics["cost_sum_usd"] += cost
@@ -770,9 +770,9 @@ class CognitiveOrchestrator:
         if tier == "SIMPLE":
             return ("claude-3-5-haiku-20241022", ProcessingMode.SYSTEM_1_FAST)
         elif tier == "MODERATE":
-            return ("claude-3-5-sonnet-latest", ProcessingMode.HYBRID)
+            return ("claude-3-5-haiku-20241022", ProcessingMode.HYBRID)
         else:  # COMPLEX
-            return ("claude-3-5-sonnet-latest", ProcessingMode.SYSTEM_2_DEEP)
+            return ("claude-3-5-haiku-20241022", ProcessingMode.SYSTEM_2_DEEP)
 
     async def _generate_response(
         self,
